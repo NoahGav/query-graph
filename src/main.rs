@@ -17,6 +17,8 @@ struct State;
 impl ResolveQuery<Query, QueryResult> for State {
     fn resolve(&self, q: Query, _resolver: Arc<QueryResolver<Query, QueryResult>>) -> QueryResult {
         println!("Resolving.");
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
         match q {
             Query::Foo => QueryResult::Foo("Foo".into()),
         }
@@ -24,19 +26,17 @@ impl ResolveQuery<Query, QueryResult> for State {
 }
 
 fn main() {
-    let state = State;
-    let graph = Graph::new(state);
+    let graph = Graph::new(State);
 
-    let mut threads = vec![];
+    let graph_clone = graph.clone();
+    let handle = std::thread::spawn(move || graph_clone.query(Query::Foo));
 
-    for _ in 0..100 {
-        let graph = graph.clone();
-        threads.push(std::thread::spawn(move || graph.query(Query::Foo)));
-    }
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
-    for thread in threads {
-        thread.join().unwrap();
-    }
+    let new_graph = graph.increment(State);
+    println!("{:#?}", new_graph);
 
-    println!("{:#?}", graph);
+    new_graph.query(Query::Foo);
+
+    handle.join().unwrap();
 }

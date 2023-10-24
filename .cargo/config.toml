@@ -1,0 +1,3 @@
+# in .cargo/config.toml
+[http]
+check-revoke = false

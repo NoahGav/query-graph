@@ -64,42 +64,6 @@ mod map;
 /// to data processing pipelines and more. Its flexibility allows developers to adapt
 /// it to their specific use cases.
 ///
-/// # Examples
-///
-/// The `Graph` type can be used in various applications. Below is an example of how
-/// it can be utilized in a concurrent incremental compiler, although its potential
-/// extends far beyond this use case:
-///
-/// ```rust
-/// use query_graph::Graph;
-///
-/// // Create a new Graph instance with a specific resolver.
-/// let graph = Graph::new(compiler_state);
-///
-/// // Query the graph to obtain the result for a specific query.
-/// let result = graph.query(MyQuery);
-///
-/// // Use the result for further processing.
-/// println!("{:?}", result);
-///
-/// // Create a new iteration of the graph by calling increment
-/// // with the new state.
-/// let new_graph = graph.increment(new_state);
-///
-/// // Query the new graph to obtain the result. Because the graph
-/// // tracks query dependencies this query will be very fast to
-/// // resolve. This is what makes the compiler incremental.
-/// let result = new_graph.query(MyQuery);
-///
-/// // Use the result for further processing.
-/// println!("{:?}", result);
-///
-/// ```
-///
-/// In this example, the `Graph` is instantiated with a custom compiler resolver and
-/// is used to resolve queries efficiently. The `ResolveQuery` trait is implemented
-/// for the compiler domain, ensuring that queries are handled appropriately.
-///
 /// # Considerations
 ///
 /// - The `Graph` is a versatile data structure that can be applied in various

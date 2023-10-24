@@ -5,6 +5,7 @@ edition = "2021"
 license-file = "LICENSE"
 readme = "README.md"
 description = "A concurrent incremental query dependency graph system."
+repository = "https://github.com/NoahGav/query-graph"
 
 [workspace]
 members = ["example"]

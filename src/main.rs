@@ -1,6 +1,8 @@
-use query_graph::{Graph, ResolveQuery};
+use std::sync::Arc;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+use query_graph::{Graph, QueryResolver, ResolveQuery};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Query {
     Foo,
 }
@@ -13,7 +15,7 @@ enum QueryResult {
 struct State;
 
 impl ResolveQuery<Query, QueryResult> for State {
-    fn resolve(&self, q: Query) -> QueryResult {
+    fn resolve(&self, q: Query, _resolver: Arc<QueryResolver<Query, QueryResult>>) -> QueryResult {
         println!("Resolving.");
         match q {
             Query::Foo => QueryResult::Foo("Foo".into()),
@@ -35,4 +37,6 @@ fn main() {
     for thread in threads {
         thread.join().unwrap();
     }
+
+    println!("{:#?}", graph);
 }

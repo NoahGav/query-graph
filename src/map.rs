@@ -1,5 +1,6 @@
 use std::{
     collections::hash_map::RandomState,
+    fmt::Debug,
     hash::{BuildHasher, Hash},
 };
 
@@ -15,6 +16,19 @@ pub struct ConcurrentMap<K, V> {
 impl<K: Eq + Hash, V: Clone> Default for ConcurrentMap<K, V> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<K: Debug + Clone + Eq + Hash, V: Debug + Clone> Debug for ConcurrentMap<K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let debug_map = self
+            .shards
+            .iter()
+            .flat_map(|shard| shard.read().clone())
+            .map(|(k, v)| (k, v))
+            .collect::<HashMap<_, _>>();
+
+        f.debug_map().entries(debug_map.iter()).finish()
     }
 }
 

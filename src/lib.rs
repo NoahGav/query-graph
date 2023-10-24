@@ -1,29 +1,41 @@
 use std::{
+    cell::RefCell,
+    fmt::Debug,
     hash::Hash,
     sync::{Arc, OnceLock},
 };
 
+use hashbrown::HashSet;
 use map::ConcurrentMap;
 
 pub mod map;
 
 #[derive(Debug)]
-struct Node<R> {
+struct Node<Q, R> {
     result: R,
     changed: bool,
-    // TODO: edges.
+    edges_from: HashSet<Q>,
 }
 
 pub struct Graph<Q, R> {
     /// The new map is used for all the queries in this iteration.
     /// This map always starts empty.
-    new: ConcurrentMap<Q, Arc<OnceLock<Node<R>>>>,
+    new: ConcurrentMap<Q, Arc<OnceLock<Node<Q, R>>>>,
     /// The old map is used for the queries from the previous iteration.
     /// This maps is a clone of the new map from the previous iteration.
-    old: ConcurrentMap<Q, Arc<OnceLock<Node<R>>>>,
+    old: ConcurrentMap<Q, Arc<OnceLock<Node<Q, R>>>>,
     /// The resolver used to resolve queries. The resolver can have it's
     /// own state as long as it's Sync + Send.
     resolver: Box<dyn ResolveQuery<Q, R>>,
+}
+
+impl<Q: Debug + Clone + Eq + Hash, R: Debug + Clone> Debug for Graph<Q, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Graph")
+            .field("new", &self.new)
+            .field("old", &self.old)
+            .finish()
+    }
 }
 
 impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
@@ -44,7 +56,7 @@ impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
         node.result.clone()
     }
 
-    fn resolve(self: &Arc<Self>, q: Q) -> Node<R> {
+    fn resolve(self: &Arc<Self>, q: Q) -> Node<Q, R> {
         let old = self.old.get(&q);
 
         if let Some(old) = old {
@@ -62,28 +74,32 @@ impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
             } else {
                 // Since the old node is not resolved yet we will just resolve
                 // it from scratch.
-                let result = self.resolver.resolve(q);
+                let resolver = Arc::new(QueryResolver::new(self.clone()));
+                let result = self.resolver.resolve(q, resolver.clone());
 
                 Node {
-                    // We need to check again if the node is still unresolved. Because
-                    // if it isn't we can set changed: old_result != result. Otherwise,
+                    // We need to check again if the old node is still unresolved. Because
+                    // if it isn't we can set changed to old_result != result. Otherwise,
                     // we always set changed to true.
                     changed: match old.get() {
                         Some(old_node) => result != old_node.result,
                         None => true,
                     },
                     result,
+                    edges_from: resolver.edges_from.take(),
                 }
             }
         } else {
-            // If the node isn't in the old map then the query is new and resolved
+            // Since the node isn't in the old map then the query is new and resolved
             // from scratch.
-            let result = self.resolver.resolve(q);
+            let resolver = Arc::new(QueryResolver::new(self.clone()));
+            let result = self.resolver.resolve(q, resolver.clone());
 
             Node {
                 result,
-                // Since this is a new node, changed is set to false.
+                // Since this is a new node, changed is always false.
                 changed: false,
+                edges_from: resolver.edges_from.take(),
             }
         }
     }
@@ -99,6 +115,27 @@ impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
     }
 }
 
+pub struct QueryResolver<Q, R> {
+    graph: Arc<Graph<Q, R>>,
+    edges_from: RefCell<HashSet<Q>>,
+}
+
+impl<Q: Clone + Eq + Hash, R: Clone + Eq> QueryResolver<Q, R> {
+    fn new(graph: Arc<Graph<Q, R>>) -> Self {
+        Self {
+            graph,
+            edges_from: RefCell::new(HashSet::new()),
+        }
+    }
+
+    pub fn query(&self, q: Q) -> R {
+        let result = self.graph.query(q.clone());
+        self.edges_from.borrow_mut().insert(q);
+        // TODO: edges_to (maybe?).
+        result
+    }
+}
+
 pub trait ResolveQuery<Q, R>: Send + Sync {
-    fn resolve(&self, q: Q) -> R;
+    fn resolve(&self, q: Q, resolve: Arc<QueryResolver<Q, R>>) -> R;
 }

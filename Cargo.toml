@@ -3,6 +3,9 @@ name = "query-graph"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["example"]
+
 [dependencies]
 hashbrown = { version = "0.14.2", features = ["rayon"] }
 parking_lot = "0.12.1"

@@ -86,14 +86,14 @@ impl<K: Eq + Hash, V: Clone> ConcurrentMap<K, V> {
         self.shards.get_unchecked(idx).write()
     }
 
-    pub fn insert(&self, key: K, value: V) {
-        let hash = self.hash(&key);
-        let idx = self.determine_shard(hash);
+    // pub fn insert(&self, key: K, value: V) {
+    //     let hash = self.hash(&key);
+    //     let idx = self.determine_shard(hash);
 
-        let mut shard = unsafe { self.get_write_shard(idx) };
+    //     let mut shard = unsafe { self.get_write_shard(idx) };
 
-        shard.insert(key, value);
-    }
+    //     shard.insert(key, value);
+    // }
 
     pub fn get(&self, key: &K) -> Option<V> {
         let hash = self.hash(key);

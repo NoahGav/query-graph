@@ -9,7 +9,7 @@ use hashbrown::HashSet;
 use map::ConcurrentMap;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-pub mod map;
+mod map;
 
 #[derive(Debug)]
 struct Node<Q, R> {

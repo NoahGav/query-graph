@@ -11,15 +11,6 @@ use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 mod map;
 
-#[derive(Debug)]
-struct Node<Q, R> {
-    result: R,
-    changed: bool,
-    edges_from: Arc<HashSet<Q>>,
-}
-
-type QueryNodeMap<Q, R> = Arc<ConcurrentMap<Q, Arc<OnceLock<Node<Q, R>>>>>;
-
 /// The `Graph` struct represents a concurrent query dependency graph. It provides
 /// the infrastructure for managing, resolving, and optimizing a wide range of
 /// queries across a variety of applications, including but not limited to
@@ -129,6 +120,15 @@ pub struct Graph<Q, R> {
     /// own state as long as it's Sync + Send.
     resolver: Box<dyn ResolveQuery<Q, R>>,
 }
+
+#[derive(Debug)]
+struct Node<Q, R> {
+    result: R,
+    changed: bool,
+    edges_from: Arc<HashSet<Q>>,
+}
+
+type QueryNodeMap<Q, R> = Arc<ConcurrentMap<Q, Arc<OnceLock<Node<Q, R>>>>>;
 
 impl<Q: Debug + Clone + Eq + Hash, R: Debug + Clone> Debug for Graph<Q, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

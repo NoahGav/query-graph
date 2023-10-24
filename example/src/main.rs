@@ -8,6 +8,7 @@ use enum_as_inner::EnumAsInner;
 use query_graph::{Graph, QueryResolver, ResolveQuery};
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
+#[derive(Clone)]
 struct Document {
     path: PathBuf,
     content: String,
@@ -34,12 +35,61 @@ enum QueryResult {
     GetSemanticModel(Vec<SyntaxTree>),
 }
 
-#[derive(Default)]
+struct Compiler {
+    snapshot: Arc<Snapshot>,
+}
+
+struct Snapshot {
+    state: Arc<CompilerState>,
+    graph: Arc<Graph<Query, QueryResult>>,
+}
+
+impl Compiler {
+    fn new() -> Self {
+        Self {
+            snapshot: Arc::new(Snapshot::new()),
+        }
+    }
+
+    fn mutate<F: FnOnce(&mut CompilerState)>(&mut self, mutation: F) {
+        let mut new_state = self.snapshot.state.as_ref().clone();
+        mutation(&mut new_state);
+        self.snapshot = Arc::new(self.snapshot.increment(Arc::new(new_state)));
+    }
+
+    fn snapshot(&self) -> Arc<Snapshot> {
+        self.snapshot.clone()
+    }
+}
+
+impl Snapshot {
+    fn new() -> Self {
+        let state = Arc::new(CompilerState::default());
+
+        Self {
+            state: state.clone(),
+            graph: Graph::new(state),
+        }
+    }
+
+    fn query(&self, q: Query) -> QueryResult {
+        self.graph.query(q)
+    }
+
+    fn increment(&self, new_state: Arc<CompilerState>) -> Snapshot {
+        Snapshot {
+            state: new_state.clone(),
+            graph: self.graph.increment(new_state),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
 struct CompilerState {
     documents: HashMap<PathBuf, Document>,
 }
 
-impl ResolveQuery<Query, QueryResult> for CompilerState {
+impl ResolveQuery<Query, QueryResult> for Arc<CompilerState> {
     fn resolve(&self, q: Query, resolver: Arc<QueryResolver<Query, QueryResult>>) -> QueryResult {
         println!("{:?}", q);
         match q {
@@ -72,35 +122,41 @@ impl ResolveQuery<Query, QueryResult> for CompilerState {
 }
 
 fn main() {
-    let mut state = CompilerState::default();
+    let mut compiler = Compiler::new();
 
-    state.documents.insert(
-        "index.html".into(),
-        Document {
-            path: "index.html".into(),
-            content: "<h1></h1>".into(),
-        },
-    );
+    compiler.mutate(|state| {
+        state.documents.insert(
+            "index.html".into(),
+            Document {
+                path: "index.html".into(),
+                content: "<h1></h1>".into(),
+            },
+        );
+    });
 
-    let graph = Graph::new(state);
+    let snapshot = compiler.snapshot();
 
-    let model = graph.query(Query::GetSemanticModel);
+    let model = snapshot.query(Query::GetSemanticModel);
     let model = model.as_get_semantic_model().unwrap();
     println!("{:#?}", model);
 
-    let mut state = CompilerState::default();
+    compiler.mutate(|state| {
+        state.documents.insert(
+            "index.html".into(),
+            Document {
+                path: "index.html".into(),
+                content: "<h1>Hello, world!</h1>".into(),
+            },
+        );
+    });
 
-    state.documents.insert(
-        "index.html".into(),
-        Document {
-            path: "index.html".into(),
-            content: "<h1></h1>".into(),
-        },
-    );
+    let model = compiler.snapshot().query(Query::GetSemanticModel);
+    let model = model.as_get_semantic_model().unwrap();
+    println!("{:#?}", model);
 
-    let graph = graph.increment(state);
-
-    let model = graph.query(Query::GetSemanticModel);
+    // As you can see I can still use the old snapshot and it doesn't
+    // resolve any queries again.
+    let model = snapshot.query(Query::GetSemanticModel);
     let model = model.as_get_semantic_model().unwrap();
     println!("{:#?}", model);
 }

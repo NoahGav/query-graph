@@ -124,9 +124,7 @@ impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> Graph<Q, R
     }
 
     fn resolve(self: &Arc<Self>, q: Q) -> Node<Q, R> {
-        let old = self.old.get(&q);
-
-        if let Some(old) = old {
+        if let Some(old) = self.old.get(&q) {
             // Since there was an old node we have to validate it.
             let old_node = old.get();
 

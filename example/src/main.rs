@@ -21,6 +21,7 @@ struct SyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Query {
     GetAllDocuments,
+    GetDocumentContent(PathBuf),
     GetSyntaxTree(PathBuf),
     GetSemanticModel,
 }
@@ -28,6 +29,7 @@ enum Query {
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
 enum QueryResult {
     GetAllDocuments(HashSet<PathBuf>),
+    GetDocumentContent(String),
     GetSyntaxTree(SyntaxTree),
     GetSemanticModel(Vec<SyntaxTree>),
 }
@@ -39,12 +41,19 @@ struct CompilerState {
 
 impl ResolveQuery<Query, QueryResult> for CompilerState {
     fn resolve(&self, q: Query, resolver: Arc<QueryResolver<Query, QueryResult>>) -> QueryResult {
+        println!("{:?}", q);
         match q {
             Query::GetAllDocuments => QueryResult::GetAllDocuments({
                 self.documents.keys().cloned().collect::<HashSet<_>>()
             }),
-            Query::GetSyntaxTree(path) => QueryResult::GetSyntaxTree(SyntaxTree {
-                content: self.documents.get(&path).unwrap().content.clone(),
+            Query::GetDocumentContent(path) => QueryResult::GetDocumentContent({
+                self.documents.get(&path).unwrap().content.clone()
+            }),
+            Query::GetSyntaxTree(path) => QueryResult::GetSyntaxTree({
+                let content = resolver.query(Query::GetDocumentContent(path));
+                let content = content.as_get_document_content().unwrap().clone();
+
+                SyntaxTree { content }
             }),
             Query::GetSemanticModel => QueryResult::GetSemanticModel({
                 let documents = resolver.query(Query::GetAllDocuments);
@@ -85,7 +94,7 @@ fn main() {
         "index.html".into(),
         Document {
             path: "index.html".into(),
-            content: "<h1>Hello, world!</h1>".into(),
+            content: "<h1></h1>".into(),
         },
     );
 

@@ -24,7 +24,6 @@ impl ResolveQuery<Query, QueryResult> for State {
         match q {
             Query::Foo => QueryResult::Foo({
                 let bar = resolver.query(Query::Bar);
-                std::thread::sleep(std::time::Duration::from_secs(2));
                 format!("Foo{:?}", bar)
             }),
             Query::Bar => {
@@ -41,15 +40,19 @@ impl ResolveQuery<Query, QueryResult> for State {
 
 fn main() {
     let graph = Graph::new(State);
+
+    let start = std::time::Instant::now();
+    let count = 100000;
+
     graph.query(Query::Foo);
 
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
-    (0..32).into_par_iter().for_each(|_| {
+    (0..count).into_par_iter().for_each(|_| {
         let new_graph = graph.increment(State);
         // println!("{:#?}", new_graph);
         new_graph.query(Query::Foo);
     });
+
+    println!("{:?}", (std::time::Instant::now() - start) / count);
 
     // let mut threads = vec![];
 

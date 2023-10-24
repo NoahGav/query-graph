@@ -7,6 +7,7 @@ use std::{
 
 use hashbrown::HashSet;
 use map::ConcurrentMap;
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 pub mod map;
 
@@ -14,7 +15,7 @@ pub mod map;
 struct Node<Q, R> {
     result: R,
     changed: bool,
-    edges_from: HashSet<Q>,
+    edges_from: Arc<HashSet<Q>>,
 }
 
 pub struct Graph<Q, R> {
@@ -38,7 +39,7 @@ impl<Q: Debug + Clone + Eq + Hash, R: Debug + Clone> Debug for Graph<Q, R> {
     }
 }
 
-impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
+impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> Graph<Q, R> {
     pub fn new(resolver: impl ResolveQuery<Q, R> + 'static) -> Arc<Self> {
         Arc::new(Self {
             new: ConcurrentMap::new(),
@@ -48,12 +49,14 @@ impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
     }
 
     pub fn query(self: &Arc<Self>, q: Q) -> R {
-        let node = self
-            .new
-            .get_or_insert(q.clone(), || Arc::new(OnceLock::default()));
-
+        let node = self.get_node(&q);
         let node = node.get_or_init(|| self.resolve(q));
         node.result.clone()
+    }
+
+    fn get_node(self: &Arc<Self>, q: &Q) -> Arc<OnceLock<Node<Q, R>>> {
+        self.new
+            .get_or_insert(q.clone(), || Arc::new(OnceLock::default()))
     }
 
     fn resolve(self: &Arc<Self>, q: Q) -> Node<Q, R> {
@@ -63,14 +66,25 @@ impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
             // Since there was an old node we have to validate it.
             let old_node = old.get();
 
-            if let Some(_old_node) = old_node {
-                // TODO: Since the old node is already resolved we actually validate
-                // TODO: the node. To do this, we traverse the graph upwards from this
-                // TODO: node to it's dependencies. We check if any of it's dependencies
-                // TODO: are changed. If none are we simply reuse the result from the
-                // TODO: old_node and set changed to false. Otherwise, we have to resolve
-                // TODO: the node again and then compare the new result with the old result.
-                todo!()
+            if let Some(old_node) = old_node {
+                let any_changed = old_node.edges_from.par_iter().any(|parent| {
+                    let node = self.get_node(parent);
+                    let node = node.get_or_init(|| self.resolve(parent.clone()));
+
+                    node.changed
+                });
+
+                if any_changed {
+                    // TODO: Need to resolve query from scratch.
+                    todo!()
+                } else {
+                    // The old result is still valid so we just clone it.
+                    Node {
+                        result: old_node.result.clone(),
+                        edges_from: old_node.edges_from.clone(),
+                        changed: false,
+                    }
+                }
             } else {
                 // Since the old node is not resolved yet we will just resolve
                 // it from scratch.
@@ -86,7 +100,7 @@ impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
                         None => true,
                     },
                     result,
-                    edges_from: resolver.edges_from.take(),
+                    edges_from: Arc::new(resolver.edges_from.take()),
                 }
             }
         } else {
@@ -99,7 +113,7 @@ impl<Q: Clone + Eq + Hash, R: Clone + Eq> Graph<Q, R> {
                 result,
                 // Since this is a new node, changed is always false.
                 changed: false,
-                edges_from: resolver.edges_from.take(),
+                edges_from: Arc::new(resolver.edges_from.take()),
             }
         }
     }
@@ -120,7 +134,7 @@ pub struct QueryResolver<Q, R> {
     edges_from: RefCell<HashSet<Q>>,
 }
 
-impl<Q: Clone + Eq + Hash, R: Clone + Eq> QueryResolver<Q, R> {
+impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> QueryResolver<Q, R> {
     fn new(graph: Arc<Graph<Q, R>>) -> Self {
         Self {
             graph,

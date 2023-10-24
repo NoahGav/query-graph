@@ -71,8 +71,8 @@ impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> Graph<Q, R
 
             if let Some(old_node) = old_node {
                 if old_node.edges_from.len() == 0 {
-                    // Since the node had no dependencies we must resolve it again
-                    // to see if it changed.
+                    // Since the node had no dependencies (a root node) we must
+                    // resolve it again to see if it changed.
                     let resolver = Arc::new(QueryResolver::new(self.clone()));
                     let result = self.resolver.resolve(q, resolver.clone());
 

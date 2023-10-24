@@ -70,16 +70,9 @@ impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> Graph<Q, R
             let old_node = old.get();
 
             if let Some(old_node) = old_node {
-                let any_changed = old_node.edges_from.par_iter().any(|parent| {
-                    let node = self.get_node(parent);
-                    let node = node.get_or_init(|| self.resolve(parent.clone()));
-
-                    node.changed
-                });
-
-                if any_changed {
-                    // Since at least one dependency of this query has changed
-                    // we have to resolve this query again.
+                if old_node.edges_from.len() == 0 {
+                    // Since the node had no dependencies we must resolve it again
+                    // to see if it changed.
                     let resolver = Arc::new(QueryResolver::new(self.clone()));
                     let result = self.resolver.resolve(q, resolver.clone());
 
@@ -94,11 +87,36 @@ impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> Graph<Q, R
                         edges_from: Arc::new(resolver.edges_from.take()),
                     }
                 } else {
-                    // The old result is still valid so we just clone it.
-                    Node {
-                        result: old_node.result.clone(),
-                        edges_from: old_node.edges_from.clone(),
-                        changed: false,
+                    let any_changed = old_node.edges_from.par_iter().any(|parent| {
+                        let node = self.get_node(parent);
+                        let node = node.get_or_init(|| self.resolve(parent.clone()));
+
+                        node.changed
+                    });
+
+                    if any_changed {
+                        // Since at least one dependency of this query has changed
+                        // we have to resolve this query again.
+                        let resolver = Arc::new(QueryResolver::new(self.clone()));
+                        let result = self.resolver.resolve(q, resolver.clone());
+
+                        Node {
+                            // This is very important and crucial to the whole system
+                            // working. If the result is the same as the old result then
+                            // changed must be false. This prevents nodes from needlessly
+                            // being resolved again when their old values can be used
+                            // instead.
+                            changed: result != old_node.result,
+                            result,
+                            edges_from: Arc::new(resolver.edges_from.take()),
+                        }
+                    } else {
+                        // The old result is still valid so we just clone it.
+                        Node {
+                            result: old_node.result.clone(),
+                            edges_from: old_node.edges_from.clone(),
+                            changed: false,
+                        }
                     }
                 }
             } else {
@@ -147,6 +165,9 @@ pub struct QueryResolver<Q, R> {
     graph: Arc<Graph<Q, R>>,
     edges_from: RefCell<HashSet<Q>>,
 }
+
+unsafe impl<Q, R> Send for QueryResolver<Q, R> {}
+unsafe impl<Q, R> Sync for QueryResolver<Q, R> {}
 
 impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> QueryResolver<Q, R> {
     fn new(graph: Arc<Graph<Q, R>>) -> Self {

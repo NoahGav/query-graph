@@ -1,84 +1,97 @@
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Arc,
+};
 
+use enum_as_inner::EnumAsInner;
 use query_graph::{Graph, QueryResolver, ResolveQuery};
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Query {
-    Foo,
-    Bar,
-    FooBar(i32),
+struct Document {
+    path: PathBuf,
+    content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum QueryResult {
-    Foo(String),
-    Bar,
-    FooBar,
+struct SyntaxTree {
+    content: String,
 }
 
-struct State;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Query {
+    GetAllDocuments,
+    GetSyntaxTree(PathBuf),
+    GetSemanticModel,
+}
 
-impl ResolveQuery<Query, QueryResult> for State {
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
+enum QueryResult {
+    GetAllDocuments(HashSet<PathBuf>),
+    GetSyntaxTree(SyntaxTree),
+    GetSemanticModel(Vec<SyntaxTree>),
+}
+
+#[derive(Default)]
+struct CompilerState {
+    documents: HashMap<PathBuf, Document>,
+}
+
+impl ResolveQuery<Query, QueryResult> for CompilerState {
     fn resolve(&self, q: Query, resolver: Arc<QueryResolver<Query, QueryResult>>) -> QueryResult {
         match q {
-            Query::Foo => QueryResult::Foo({
-                let bar = resolver.query(Query::Bar);
-                format!("Foo{:?}", bar)
+            Query::GetAllDocuments => QueryResult::GetAllDocuments({
+                self.documents.keys().cloned().collect::<HashSet<_>>()
             }),
-            Query::Bar => {
-                resolver.query(Query::FooBar(0));
-                resolver.query(Query::FooBar(1));
-                resolver.query(Query::FooBar(2));
+            Query::GetSyntaxTree(path) => QueryResult::GetSyntaxTree(SyntaxTree {
+                content: self.documents.get(&path).unwrap().content.clone(),
+            }),
+            Query::GetSemanticModel => QueryResult::GetSemanticModel({
+                let documents = resolver.query(Query::GetAllDocuments);
+                let documents = documents.as_get_all_documents().unwrap();
 
-                QueryResult::Bar
-            }
-            Query::FooBar(_) => QueryResult::FooBar,
+                documents
+                    .par_iter()
+                    .map(|path| {
+                        let tree = resolver.query(Query::GetSyntaxTree(path.clone()));
+                        tree.as_get_syntax_tree().unwrap().clone()
+                    })
+                    .collect::<Vec<_>>()
+            }),
         }
     }
 }
 
 fn main() {
-    let graph = Graph::new(State);
+    let mut state = CompilerState::default();
 
-    let start = std::time::Instant::now();
-    let count = 100000;
+    state.documents.insert(
+        "index.html".into(),
+        Document {
+            path: "index.html".into(),
+            content: "<h1></h1>".into(),
+        },
+    );
 
-    graph.query(Query::Foo);
+    let graph = Graph::new(state);
 
-    (0..count).into_par_iter().for_each(|_| {
-        let new_graph = graph.increment(State);
-        // println!("{:#?}", new_graph);
-        new_graph.query(Query::Foo);
-    });
+    let model = graph.query(Query::GetSemanticModel);
+    let model = model.as_get_semantic_model().unwrap();
+    println!("{:#?}", model);
 
-    println!("{:?}", (std::time::Instant::now() - start) / count);
+    let mut state = CompilerState::default();
 
-    // let mut threads = vec![];
+    state.documents.insert(
+        "index.html".into(),
+        Document {
+            path: "index.html".into(),
+            content: "<h1>Hello, world!</h1>".into(),
+        },
+    );
 
-    // for _ in 0..100 {
-    //     let graph = graph.clone();
+    let graph = graph.increment(state);
 
-    //     threads.push(std::thread::spawn(move || {
-    //         let new_graph = graph.increment(State);
-    //         new_graph.query(Query::Foo)
-    //     }));
-    // }
-
-    // for thread in threads {
-    //     thread.join().unwrap();
-    // }
-
-    // let graph_clone = graph.clone();
-    // let handle = std::thread::spawn(move || graph_clone.query(Query::Foo));
-
-    // std::thread::sleep(std::time::Duration::from_secs(1));
-
-    // let new_graph = graph.increment(State);
-    // println!("{:#?}", new_graph);
-
-    // new_graph.query(Query::Foo);
-    // println!("{:#?}", new_graph);
-
-    // handle.join().unwrap();
+    let model = graph.query(Query::GetSemanticModel);
+    let model = model.as_get_semantic_model().unwrap();
+    println!("{:#?}", model);
 }

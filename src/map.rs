@@ -32,21 +32,21 @@ impl<K: Debug + Clone + Eq + Hash, V: Debug + Clone> Debug for ConcurrentMap<K, 
     }
 }
 
-impl<K: Clone, V: Clone> Clone for ConcurrentMap<K, V> {
-    fn clone(&self) -> Self {
-        let shards = self
-            .shards
-            .iter()
-            .map(|shard| RwLock::new(shard.read().clone()))
-            .collect::<Box<_>>();
+// impl<K: Clone, V: Clone> Clone for ConcurrentMap<K, V> {
+//     fn clone(&self) -> Self {
+//         let shards = self
+//             .shards
+//             .iter()
+//             .map(|shard| RwLock::new(shard.read().clone()))
+//             .collect::<Box<_>>();
 
-        Self {
-            shards,
-            num_shards: self.num_shards,
-            hasher: self.hasher.clone(),
-        }
-    }
-}
+//         Self {
+//             shards,
+//             num_shards: self.num_shards,
+//             hasher: self.hasher.clone(),
+//         }
+//     }
+// }
 
 impl<K: Eq + Hash, V: Clone> ConcurrentMap<K, V> {
     pub fn new() -> Self {

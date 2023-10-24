@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use query_graph::{Graph, QueryResolver, ResolveQuery};
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Query {
@@ -20,12 +21,10 @@ struct State;
 
 impl ResolveQuery<Query, QueryResult> for State {
     fn resolve(&self, q: Query, resolver: Arc<QueryResolver<Query, QueryResult>>) -> QueryResult {
-        println!("Resolving.");
-
         match q {
             Query::Foo => QueryResult::Foo({
                 let bar = resolver.query(Query::Bar);
-                std::thread::sleep(std::time::Duration::from_secs(3));
+                std::thread::sleep(std::time::Duration::from_secs(2));
                 format!("Foo{:?}", bar)
             }),
             Query::Bar => {
@@ -42,17 +41,41 @@ impl ResolveQuery<Query, QueryResult> for State {
 
 fn main() {
     let graph = Graph::new(State);
-
-    let graph_clone = graph.clone();
-    let handle = std::thread::spawn(move || graph_clone.query(Query::Foo));
+    graph.query(Query::Foo);
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    let new_graph = graph.increment(State);
-    println!("{:#?}", new_graph);
+    (0..32).into_par_iter().for_each(|_| {
+        let new_graph = graph.increment(State);
+        // println!("{:#?}", new_graph);
+        new_graph.query(Query::Foo);
+    });
 
-    new_graph.query(Query::Foo);
-    println!("{:#?}", new_graph);
+    // let mut threads = vec![];
 
-    handle.join().unwrap();
+    // for _ in 0..100 {
+    //     let graph = graph.clone();
+
+    //     threads.push(std::thread::spawn(move || {
+    //         let new_graph = graph.increment(State);
+    //         new_graph.query(Query::Foo)
+    //     }));
+    // }
+
+    // for thread in threads {
+    //     thread.join().unwrap();
+    // }
+
+    // let graph_clone = graph.clone();
+    // let handle = std::thread::spawn(move || graph_clone.query(Query::Foo));
+
+    // std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // let new_graph = graph.increment(State);
+    // println!("{:#?}", new_graph);
+
+    // new_graph.query(Query::Foo);
+    // println!("{:#?}", new_graph);
+
+    // handle.join().unwrap();
 }

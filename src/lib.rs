@@ -18,13 +18,16 @@ struct Node<Q, R> {
     edges_from: Arc<HashSet<Q>>,
 }
 
+type QueryNodeMap<Q, R> = Arc<ConcurrentMap<Q, Arc<OnceLock<Node<Q, R>>>>>;
+
 pub struct Graph<Q, R> {
     /// The new map is used for all the queries in this iteration.
     /// This map always starts empty.
-    new: ConcurrentMap<Q, Arc<OnceLock<Node<Q, R>>>>,
-    /// The old map is used for the queries from the previous iteration.
-    /// This maps is a clone of the new map from the previous iteration.
-    old: ConcurrentMap<Q, Arc<OnceLock<Node<Q, R>>>>,
+    new: QueryNodeMap<Q, R>,
+    /// The old map is used for validating queries from this iteration.
+    /// It's just a reference to the map from the previous iteration and
+    /// so is very efficient.
+    old: QueryNodeMap<Q, R>,
     /// The resolver used to resolve queries. The resolver can have it's
     /// own state as long as it's Sync + Send.
     resolver: Box<dyn ResolveQuery<Q, R>>,
@@ -42,8 +45,8 @@ impl<Q: Debug + Clone + Eq + Hash, R: Debug + Clone> Debug for Graph<Q, R> {
 impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> Graph<Q, R> {
     pub fn new(resolver: impl ResolveQuery<Q, R> + 'static) -> Arc<Self> {
         Arc::new(Self {
-            new: ConcurrentMap::new(),
-            old: ConcurrentMap::new(),
+            new: Arc::new(ConcurrentMap::new()),
+            old: Arc::new(ConcurrentMap::new()),
             resolver: Box::new(resolver),
         })
     }
@@ -132,11 +135,9 @@ impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> Graph<Q, R
     }
 
     pub fn increment(self: &Arc<Self>, resolver: impl ResolveQuery<Q, R> + 'static) -> Arc<Self> {
-        let old = self.new.clone();
-
         Arc::new(Self {
-            new: ConcurrentMap::new(),
-            old,
+            new: Arc::new(ConcurrentMap::new()),
+            old: self.new.clone(),
             resolver: Box::new(resolver),
         })
     }

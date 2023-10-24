@@ -75,8 +75,21 @@ impl<Q: Clone + Eq + Hash + Send + Sync, R: Clone + Eq + Send + Sync> Graph<Q, R
                 });
 
                 if any_changed {
-                    // TODO: Need to resolve query from scratch.
-                    todo!()
+                    // Since at least one dependency of this query has changed
+                    // we have to resolve this query again.
+                    let resolver = Arc::new(QueryResolver::new(self.clone()));
+                    let result = self.resolver.resolve(q, resolver.clone());
+
+                    Node {
+                        // This is very important and crucial to the whole system
+                        // working. If the result is the same as the old result then
+                        // changed must be false. This prevents nodes from needlessly
+                        // being resolved again when their old values can be used
+                        // instead.
+                        changed: result != old_node.result,
+                        result,
+                        edges_from: Arc::new(resolver.edges_from.take()),
+                    }
                 } else {
                     // The old result is still valid so we just clone it.
                     Node {

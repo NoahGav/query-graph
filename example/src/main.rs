@@ -14,9 +14,14 @@ struct Document {
     content: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SyntaxTree {
     content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SemanticModel {
+    syntax_trees: HashMap<PathBuf, Arc<SyntaxTree>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -31,8 +36,8 @@ enum Query {
 enum QueryResult {
     GetAllDocuments(HashSet<PathBuf>),
     GetDocumentContent(String),
-    GetSyntaxTree(SyntaxTree),
-    GetSemanticModel(Vec<SyntaxTree>),
+    GetSyntaxTree(Arc<SyntaxTree>),
+    GetSemanticModel(Arc<SemanticModel>),
 }
 
 struct Compiler {
@@ -72,8 +77,9 @@ impl Snapshot {
         }
     }
 
-    fn query(&self, q: Query) -> QueryResult {
-        self.graph.query(q)
+    fn get_semantic_model(&self) -> Arc<SemanticModel> {
+        let result = self.graph.query(Query::GetSemanticModel);
+        result.as_get_semantic_model().unwrap().clone()
     }
 
     fn increment(&self, new_state: Arc<CompilerState>) -> Snapshot {
@@ -103,19 +109,21 @@ impl ResolveQuery<Query, QueryResult> for Arc<CompilerState> {
                 let content = resolver.query(Query::GetDocumentContent(path));
                 let content = content.as_get_document_content().unwrap().clone();
 
-                SyntaxTree { content }
+                Arc::new(SyntaxTree { content })
             }),
             Query::GetSemanticModel => QueryResult::GetSemanticModel({
                 let documents = resolver.query(Query::GetAllDocuments);
                 let documents = documents.as_get_all_documents().unwrap();
 
-                documents
-                    .par_iter()
-                    .map(|path| {
-                        let tree = resolver.query(Query::GetSyntaxTree(path.clone()));
-                        tree.as_get_syntax_tree().unwrap().clone()
-                    })
-                    .collect::<Vec<_>>()
+                Arc::new(SemanticModel {
+                    syntax_trees: documents
+                        .par_iter()
+                        .map(|path| {
+                            let tree = resolver.query(Query::GetSyntaxTree(path.clone()));
+                            (path.clone(), tree.as_get_syntax_tree().unwrap().clone())
+                        })
+                        .collect::<HashMap<_, _>>(),
+                })
             }),
         }
     }
@@ -136,8 +144,7 @@ fn main() {
 
     let snapshot = compiler.snapshot();
 
-    let model = snapshot.query(Query::GetSemanticModel);
-    let model = model.as_get_semantic_model().unwrap();
+    let model = snapshot.get_semantic_model();
     println!("{:#?}", model);
 
     compiler.mutate(|state| {
@@ -150,13 +157,11 @@ fn main() {
         );
     });
 
-    let model = compiler.snapshot().query(Query::GetSemanticModel);
-    let model = model.as_get_semantic_model().unwrap();
+    let model = compiler.snapshot().get_semantic_model();
     println!("{:#?}", model);
 
     // As you can see I can still use the old snapshot and it doesn't
-    // resolve any queries again.
-    let model = snapshot.query(Query::GetSemanticModel);
-    let model = model.as_get_semantic_model().unwrap();
+    // resolve any already resolved queries again.
+    let model = snapshot.get_semantic_model();
     println!("{:#?}", model);
 }

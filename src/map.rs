@@ -1,9 +1,6 @@
-use std::{
-    collections::hash_map::RandomState,
-    fmt::Debug,
-    hash::{BuildHasher, Hash},
-};
+use std::{fmt::Debug, hash::Hash};
 
+use ahash::RandomState;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 
